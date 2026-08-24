@@ -5,6 +5,7 @@ import {
   SeoImageValidationError,
   uploadSeoImage,
 } from "../../../lib/seo-image-upload";
+import { isValidSessionCookieValue, SESSION_COOKIE_NAME } from "../../../lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -174,7 +175,32 @@ function tokensEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function authorizeUpload(request: Request): void {
+function getCookieValue(request: Request, name: string): string | undefined {
+  const cookieHeader = request.headers.get("cookie");
+  if (!cookieHeader) return undefined;
+
+  for (const part of cookieHeader.split(";")) {
+    const separatorIndex = part.indexOf("=");
+    if (separatorIndex === -1) continue;
+    const key = part.slice(0, separatorIndex).trim();
+    if (key !== name) continue;
+    const value = part.slice(separatorIndex + 1).trim();
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+async function authorizeUpload(request: Request): Promise<void> {
+  // Sessão de login (cookie) é o caminho normal vindo da interface web.
+  const sessionCookie = getCookieValue(request, SESSION_COOKIE_NAME);
+  if (await isValidSessionCookieValue(sessionCookie)) {
+    return;
+  }
+
   const expectedToken = process.env.UPLOAD_API_TOKEN?.trim();
   const isProduction = process.env.NODE_ENV === "production";
 
@@ -189,7 +215,9 @@ function authorizeUpload(request: Request): void {
 
   const receivedToken = getBearerToken(request);
   if (!receivedToken || !tokensEqual(receivedToken, expectedToken)) {
-    throw new UploadAuthorizationError("Token de upload inválido ou ausente.");
+    throw new UploadAuthorizationError(
+      "Sessão expirada ou token de upload inválido. Faça login novamente.",
+    );
   }
 }
 
@@ -231,13 +259,14 @@ function jsonError(error: unknown): NextResponse {
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    authorizeUpload(request);
+    await authorizeUpload(request);
 
     const formData = await request.formData();
     const productId = getRequiredText(formData, "productId");
     const productName = getRequiredText(formData, "productName");
     const variant = getOptionalText(formData, "variant");
     const altText = getOptionalText(formData, "altText");
+    const uploadedBy = getOptionalText(formData, "uploadedBy");
     const outputFormat = getOptionalText(formData, "outputFormat") as
       | "webp"
       | "jpeg"
@@ -253,6 +282,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const results = [];
     const errors: UploadError[] = [];
 
+    // O processamento sequencial limita o pico de memória e evita que muitos
+    // buffers de imagem sejam decodificados simultaneamente.
     for (const [index, file] of files.entries()) {
       const sequence = sequences[index]!;
       try {
@@ -265,6 +296,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           productId,
           sequence,
           altText,
+          uploadedBy,
           outputFormat,
           quality,
           maxWidth,
