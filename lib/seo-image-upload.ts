@@ -24,6 +24,7 @@ export type SeoImageInput = {
   productId: string;
   sequence: number;
   altText?: string | null;
+  uploadedBy?: string | null;
   outputFormat?: SeoImageOutputFormat;
   quality?: number;
   maxWidth?: number;
@@ -244,6 +245,8 @@ function assertSequence(sequence: number): void {
 }
 
 function metadataValue(value: string): string {
+  // S3 user metadata precisa ser compatível com US-ASCII. Base64 preserva
+  // os dados originais sem inserir acentos ou caracteres de controle.
   return Buffer.from(value, "utf8").toString("base64");
 }
 
@@ -382,6 +385,7 @@ export async function uploadSeoImage(
   const altText =
     normalizedText(input.altText, "altText", 512) ??
     [productName, variant].filter(Boolean).join(" ");
+  const uploadedBy = normalizedText(input.uploadedBy, "uploadedBy", 160);
   const optimized = await optimizeImage(input.body, {
     contentType: input.contentType,
     outputFormat: input.outputFormat,
@@ -410,6 +414,7 @@ export async function uploadSeoImage(
           original_name: metadataValue(originalName),
           alt_text: metadataValue(altText),
           ...(variant ? { variant: metadataValue(variant) } : {}),
+          ...(uploadedBy ? { uploaded_by: metadataValue(uploadedBy) } : {}),
         },
         IfNoneMatch: "*",
       }),
