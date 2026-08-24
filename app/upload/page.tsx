@@ -1,16 +1,60 @@
 "use client";
 
-import { ChangeEvent, DragEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  DragEvent,
+  KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
 import styles from "./upload.module.css";
+import { LOGO_DATA_URL } from "../../lib/logo";
 
-const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+const UPLOADER_NAME_STORAGE_KEY = "via-encanto-uploader-name";
+
+const ACCEPTED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+]);
 const ACCEPTED_ATTRIBUTE = "image/jpeg,image/png,image/webp,image/avif";
 const MAX_FILES = 20;
 
-type SelectedFile = { id: string; file: File; previewUrl: string };
-type UploadResult = { key: string; originalName: string; sequence: number; filename: string; url: string; contentType: string; width: number; height: number; bytes: number; altText: string };
-type UploadError = { originalName: string; sequence: number; message: string };
-type UploadResponse = { success: boolean; count?: number; results?: UploadResult[]; errors?: UploadError[]; error?: string };
+type SelectedFile = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
+
+type UploadResult = {
+  key: string;
+  originalName: string;
+  sequence: number;
+  filename: string;
+  url: string;
+  contentType: string;
+  width: number;
+  height: number;
+  bytes: number;
+  altText: string;
+};
+
+type UploadError = {
+  originalName: string;
+  sequence: number;
+  message: string;
+};
+
+type UploadResponse = {
+  success: boolean;
+  count?: number;
+  results?: UploadResult[];
+  errors?: UploadError[];
+  error?: string;
+};
 
 function createFileId(file: File): string {
   return `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
@@ -27,27 +71,54 @@ function normalizeFiles(fileList: FileList | File[]): File[] {
 }
 
 export default function UploadImagesPage() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<SelectedFile[]>([]);
   const [files, setFiles] = useState<SelectedFile[]>([]);
+  const [uploaderName, setUploaderName] = useState("");
   const [productId, setProductId] = useState("");
   const [productName, setProductName] = useState("");
   const [variant, setVariant] = useState("");
   const [sequence, setSequence] = useState("1");
   const [outputFormat, setOutputFormat] = useState("webp");
   const [quality, setQuality] = useState("82");
-  const [uploadToken, setUploadToken] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
   const [uploadErrors, setUploadErrors] = useState<UploadError[]>([]);
 
-  useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => {
-    return () => { filesRef.current.forEach((entry) => URL.revokeObjectURL(entry.previewUrl)); };
+    filesRef.current = files;
+  }, [files]);
+
+  useEffect(() => {
+    return () => {
+      filesRef.current.forEach((entry) => URL.revokeObjectURL(entry.previewUrl));
+    };
   }, []);
+
+  useEffect(() => {
+    const storedName = window.localStorage.getItem(UPLOADER_NAME_STORAGE_KEY);
+    if (storedName) setUploaderName(storedName);
+  }, []);
+
+  function handleUploaderNameChange(value: string) {
+    setUploaderName(value);
+    window.localStorage.setItem(UPLOADER_NAME_STORAGE_KEY, value);
+  }
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      router.replace("/login");
+      router.refresh();
+    }
+  }
 
   function addFiles(fileList: FileList | File[]) {
     const acceptedFiles = normalizeFiles(fileList);
@@ -55,11 +126,19 @@ export default function UploadImagesPage() {
     const availableSlots = Math.max(0, MAX_FILES - files.length);
     const filesToAdd = acceptedFiles.slice(0, availableSlots);
 
-    if (rejectedCount > 0) setError("Alguns arquivos foram ignorados. Use JPG, PNG, WEBP ou AVIF.");
-    else if (acceptedFiles.length > availableSlots) setError(`É possível selecionar no máximo ${MAX_FILES} imagens.`);
-    else setError(null);
+    if (rejectedCount > 0) {
+      setError("Alguns arquivos foram ignorados. Use JPG, PNG, WEBP ou AVIF.");
+    } else if (acceptedFiles.length > availableSlots) {
+      setError(`É possível selecionar no máximo ${MAX_FILES} imagens.`);
+    } else {
+      setError(null);
+    }
 
-    const entries = filesToAdd.map((file) => ({ id: createFileId(file), file, previewUrl: URL.createObjectURL(file) }));
+    const entries = filesToAdd.map((file) => ({
+      id: createFileId(file),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
     setFiles((current) => [...current, ...entries]);
   }
 
@@ -71,11 +150,16 @@ export default function UploadImagesPage() {
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setIsDragging(false);
-    if (event.dataTransfer.files.length > 0) addFiles(event.dataTransfer.files);
+    if (event.dataTransfer.files.length > 0) {
+      addFiles(event.dataTransfer.files);
+    }
   }
 
   function handleDropzoneKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inputRef.current?.click(); }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inputRef.current?.click();
+    }
   }
 
   function removeFile(id: string) {
@@ -88,20 +172,34 @@ export default function UploadImagesPage() {
 
   function clearFiles() {
     files.forEach((entry) => URL.revokeObjectURL(entry.previewUrl));
-    setFiles([]); setResults([]); setUploadErrors([]); setMessage(null); setError(null);
+    setFiles([]);
+    setResults([]);
+    setUploadErrors([]);
+    setMessage(null);
+    setError(null);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null); setError(null); setResults([]); setUploadErrors([]);
+    setMessage(null);
+    setError(null);
+    setResults([]);
+    setUploadErrors([]);
 
-    if (!productId.trim() || !productName.trim()) { setError("Informe o ID e o nome do produto antes de enviar."); return; }
-    if (files.length === 0) { setError("Selecione pelo menos uma imagem."); return; }
+    if (!productId.trim() || !productName.trim()) {
+      setError("Informe o ID e o nome do produto antes de enviar.");
+      return;
+    }
+    if (files.length === 0) {
+      setError("Selecione pelo menos uma imagem.");
+      return;
+    }
 
     const formData = new FormData();
     formData.set("productId", productId.trim());
     formData.set("productName", productName.trim());
     if (variant.trim()) formData.set("variant", variant.trim());
+    if (uploaderName.trim()) formData.set("uploadedBy", uploaderName.trim());
     formData.set("sequence", sequence || "1");
     formData.set("outputFormat", outputFormat);
     formData.set("quality", quality || "82");
@@ -109,24 +207,39 @@ export default function UploadImagesPage() {
 
     try {
       setIsUploading(true);
-      const headers: HeadersInit = {};
-      if (uploadToken.trim()) headers.Authorization = `Bearer ${uploadToken.trim()}`;
 
-      const response = await fetch("/api/images", { method: "POST", headers, body: formData });
+      const response = await fetch("/api/images", {
+        method: "POST",
+        body: formData,
+      });
       const payload = (await response.json()) as UploadResponse;
+
+      if (response.status === 401) {
+        router.replace("/login?next=/upload");
+        router.refresh();
+        return;
+      }
 
       setResults(payload.results ?? []);
       setUploadErrors(payload.errors ?? []);
 
-      if (!response.ok && response.status !== 207) throw new Error(payload.error ?? "Não foi possível concluir o upload.");
+      if (!response.ok && response.status !== 207) {
+        throw new Error(payload.error ?? "Não foi possível concluir o upload.");
+      }
 
       if ((payload.errors ?? []).length > 0) {
-        setMessage(`${payload.results?.length ?? 0} imagem(ns) enviada(s); confira as falhas abaixo.`);
+        setMessage(
+          `${payload.results?.length ?? 0} imagem(ns) enviada(s); confira as falhas abaixo.`,
+        );
       } else {
         setMessage(`${payload.count ?? 0} imagem(ns) enviada(s) com sucesso.`);
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Falha de comunicação com a API.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Falha de comunicação com a API.",
+      );
     } finally {
       setIsUploading(false);
     }
@@ -146,11 +259,38 @@ export default function UploadImagesPage() {
       <section className={styles.shell}>
         <header className={styles.header}>
           <div>
+            <img
+              src={LOGO_DATA_URL}
+              alt="Via Encanto"
+              style={{ width: 150, marginBottom: 18, display: "block" }}
+            />
             <p className={styles.eyebrow}>Gerador de imagens SEO-friendly</p>
             <h1>Envie as fotos do produto</h1>
-            <p className={styles.subtitle}>Arraste as imagens, informe os dados comerciais e receba URLs públicas com nomes descritivos para o catálogo.</p>
+            <p className={styles.subtitle}>
+              Arraste as imagens, informe os dados comerciais e receba URLs públicas
+              com nomes descritivos para o catálogo.
+            </p>
           </div>
-          <div className={styles.badge}>S3 / R2</div>
+          <div style={{ display: "grid", justifyItems: "end", gap: 10 }}>
+            <div className={styles.badge}>S3 / R2</div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "#8192a0",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                cursor: isLoggingOut ? "not-allowed" : "pointer",
+                textDecoration: "underline",
+                padding: 0,
+              }}
+            >
+              {isLoggingOut ? "Saindo…" : "Sair"}
+            </button>
+          </div>
         </header>
 
         <form onSubmit={handleSubmit} className={styles.form}>
@@ -158,24 +298,63 @@ export default function UploadImagesPage() {
             <section className={styles.panel} aria-labelledby="product-data-title">
               <div className={styles.panelHeading}>
                 <p className={styles.step}>01</p>
-                <div><h2 id="product-data-title">Dados do produto</h2><p>Esses dados definem o nome público da imagem.</p></div>
+                <div>
+                  <h2 id="product-data-title">Dados do produto</h2>
+                  <p>Esses dados definem o nome público da imagem.</p>
+                </div>
               </div>
+
               <div className={styles.fields}>
-                <label>ID do produto
-                  <input value={productId} onChange={(event) => setProductId(event.target.value)} placeholder="Ex.: 123" required />
+                <label>
+                  Quem está enviando
+                  <input
+                    value={uploaderName}
+                    onChange={(event) => handleUploaderNameChange(event.target.value)}
+                    placeholder="Seu nome"
+                  />
                 </label>
-                <label>Nome do produto
-                  <input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Ex.: Namoradeira Chesterfield Duque" required />
+                <label>
+                  ID do produto
+                  <input
+                    value={productId}
+                    onChange={(event) => setProductId(event.target.value)}
+                    placeholder="Ex.: 123"
+                    required
+                  />
                 </label>
-                <label>Variante ou acabamento
-                  <input value={variant} onChange={(event) => setVariant(event.target.value)} placeholder="Ex.: Corano azul-marinho" />
+                <label>
+                  Nome do produto
+                  <input
+                    value={productName}
+                    onChange={(event) => setProductName(event.target.value)}
+                    placeholder="Ex.: Namoradeira Chesterfield Duque"
+                    required
+                  />
+                </label>
+                <label>
+                  Variante ou acabamento
+                  <input
+                    value={variant}
+                    onChange={(event) => setVariant(event.target.value)}
+                    placeholder="Ex.: Corano azul-marinho"
+                  />
                 </label>
                 <div className={styles.twoColumns}>
-                  <label>Sequência inicial
-                    <input type="number" min="1" value={sequence} onChange={(event) => setSequence(event.target.value)} />
+                  <label>
+                    Sequência inicial
+                    <input
+                      type="number"
+                      min="1"
+                      value={sequence}
+                      onChange={(event) => setSequence(event.target.value)}
+                    />
                   </label>
-                  <label>Formato final
-                    <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)}>
+                  <label>
+                    Formato final
+                    <select
+                      value={outputFormat}
+                      onChange={(event) => setOutputFormat(event.target.value)}
+                    >
                       <option value="webp">WEBP</option>
                       <option value="jpeg">JPEG</option>
                       <option value="png">PNG</option>
@@ -183,26 +362,38 @@ export default function UploadImagesPage() {
                     </select>
                   </label>
                 </div>
-                <label>Qualidade de compressão: <strong>{quality}</strong>
-                  <input type="range" min="1" max="100" value={quality} onChange={(event) => setQuality(event.target.value)} />
+                <label>
+                  Qualidade de compressão: <strong>{quality}</strong>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={quality}
+                    onChange={(event) => setQuality(event.target.value)}
+                  />
                 </label>
-                <label>Token de upload <span className={styles.optional}>(demo interno)</span>
-                  <input type="password" value={uploadToken} onChange={(event) => setUploadToken(event.target.value)} placeholder="Authorization: Bearer ..." autoComplete="off" />
-                </label>
-                <p className={styles.securityNote}>Em produção, prefira autenticação da sessão do usuário. Não exponha um token permanente em uma página pública.</p>
               </div>
             </section>
 
             <section className={styles.panel} aria-labelledby="images-title">
               <div className={styles.panelHeading}>
                 <p className={styles.step}>02</p>
-                <div><h2 id="images-title">Imagens</h2><p>Até {MAX_FILES} arquivos JPG, PNG, WEBP ou AVIF.</p></div>
+                <div>
+                  <h2 id="images-title">Imagens</h2>
+                  <p>Até {MAX_FILES} arquivos JPG, PNG, WEBP ou AVIF.</p>
+                </div>
               </div>
+
               <div
                 className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
-                onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
                 onDragOver={(event) => event.preventDefault()}
-                onDragLeave={(event) => { if (event.currentTarget === event.target) setIsDragging(false); }}
+                onDragLeave={(event) => {
+                  if (event.currentTarget === event.target) setIsDragging(false);
+                }}
                 onDrop={handleDrop}
                 onClick={() => inputRef.current?.click()}
                 onKeyDown={handleDropzoneKeyDown}
@@ -210,11 +401,19 @@ export default function UploadImagesPage() {
                 tabIndex={0}
                 aria-label="Área para arrastar imagens ou abrir o seletor de arquivos"
               >
-                <input ref={inputRef} className={styles.hiddenInput} type="file" accept={ACCEPTED_ATTRIBUTE} multiple onChange={handleInputChange} />
+                <input
+                  ref={inputRef}
+                  className={styles.hiddenInput}
+                  type="file"
+                  accept={ACCEPTED_ATTRIBUTE}
+                  multiple
+                  onChange={handleInputChange}
+                />
                 <div className={styles.uploadIcon} aria-hidden="true">↑</div>
                 <strong>Arraste e solte as imagens aqui</strong>
                 <span>ou clique para selecionar no computador</span>
               </div>
+
               {files.length > 0 ? (
                 <div className={styles.fileList}>
                   {files.map((entry, index) => (
@@ -225,7 +424,17 @@ export default function UploadImagesPage() {
                         <span title={entry.file.name}>{entry.file.name}</span>
                         <small>{formatBytes(entry.file.size)}</small>
                       </div>
-                      <button type="button" className={styles.removeButton} onClick={(event) => { event.stopPropagation(); removeFile(entry.id); }} aria-label={`Remover ${entry.file.name}`}>×</button>
+                      <button
+                        type="button"
+                        className={styles.removeButton}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeFile(entry.id);
+                        }}
+                        aria-label={`Remover ${entry.file.name}`}
+                      >
+                        ×
+                      </button>
                     </article>
                   ))}
                 </div>
@@ -236,12 +445,23 @@ export default function UploadImagesPage() {
           </div>
 
           {(error || message) && (
-            <div className={error ? styles.alertError : styles.alertSuccess} role="status">{error ?? message}</div>
+            <div className={error ? styles.alertError : styles.alertSuccess} role="status">
+              {error ?? message}
+            </div>
           )}
 
           <div className={styles.actions}>
-            <button type="button" className={styles.secondaryButton} onClick={clearFiles} disabled={isUploading || files.length === 0}>Limpar seleção</button>
-            <button type="submit" className={styles.primaryButton} disabled={isUploading}>{isUploading ? "Enviando imagens…" : "Gerar links públicos"}</button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={clearFiles}
+              disabled={isUploading || files.length === 0}
+            >
+              Limpar seleção
+            </button>
+            <button type="submit" className={styles.primaryButton} disabled={isUploading}>
+              {isUploading ? "Enviando imagens…" : "Gerar links públicos"}
+            </button>
           </div>
         </form>
 
@@ -249,8 +469,12 @@ export default function UploadImagesPage() {
           <section className={styles.results} aria-labelledby="results-title">
             <div className={styles.panelHeading}>
               <p className={styles.step}>03</p>
-              <div><h2 id="results-title">Resultado do processamento</h2><p>Confira e copie as URLs geradas.</p></div>
+              <div>
+                <h2 id="results-title">Resultado do processamento</h2>
+                <p>Confira e copie as URLs geradas.</p>
+              </div>
             </div>
+
             <div className={styles.resultList}>
               {results.map((result) => (
                 <article className={styles.resultCard} key={result.key}>
@@ -259,8 +483,12 @@ export default function UploadImagesPage() {
                     <span>{result.width} × {result.height} px · {formatBytes(result.bytes)}</span>
                   </div>
                   <div className={styles.urlRow}>
-                    <a href={result.url} target="_blank" rel="noreferrer">{result.url}</a>
-                    <button type="button" onClick={() => copyUrl(result.url)}>Copiar</button>
+                    <a href={result.url} target="_blank" rel="noreferrer">
+                      {result.url}
+                    </a>
+                    <button type="button" onClick={() => copyUrl(result.url)}>
+                      Copiar
+                    </button>
                   </div>
                 </article>
               ))}
