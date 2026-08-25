@@ -111,6 +111,18 @@ export default function UploadImagesPage() {
     window.localStorage.setItem(UPLOADER_NAME_STORAGE_KEY, value);
   }
 
+  const isTrayPreset = outputFormat === "jpeg" && maxDimension === "2000";
+
+  function toggleTrayPreset() {
+    if (isTrayPreset) {
+      setOutputFormat("webp");
+      setMaxDimension("");
+    } else {
+      setOutputFormat("jpeg");
+      setMaxDimension("2000");
+    }
+  }
+
   async function handleLogout() {
     setIsLoggingOut(true);
     try {
@@ -343,6 +355,29 @@ export default function UploadImagesPage() {
                     onChange={(event) => setVariant(event.target.value)}
                     placeholder="Ex.: Corano azul-marinho"
                   />
+                </label>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    border: "1px solid #d4e1e9",
+                    borderRadius: 12,
+                    padding: "11px 13px",
+                    background: isTrayPreset ? "#eaf6f8" : "#fbfdff",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isTrayPreset}
+                    onChange={toggleTrayPreset}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  <span>
+                    Preparar para o Tray{" "}
+                    <span className={styles.optional}>(JPEG, até 2000px)</span>
+                  </span>
                 </label>
                 <div className={styles.twoColumns}>
                   <label>
