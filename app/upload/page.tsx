@@ -82,6 +82,7 @@ export default function UploadImagesPage() {
   const [sequence, setSequence] = useState("1");
   const [outputFormat, setOutputFormat] = useState("webp");
   const [quality, setQuality] = useState("82");
+  const [maxDimension, setMaxDimension] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -203,6 +204,10 @@ export default function UploadImagesPage() {
     formData.set("sequence", sequence || "1");
     formData.set("outputFormat", outputFormat);
     formData.set("quality", quality || "82");
+    if (maxDimension.trim()) {
+      formData.set("maxWidth", maxDimension.trim());
+      formData.set("maxHeight", maxDimension.trim());
+    }
     files.forEach((entry) => formData.append("files", entry.file, entry.file.name));
 
     try {
@@ -370,6 +375,17 @@ export default function UploadImagesPage() {
                     max="100"
                     value={quality}
                     onChange={(event) => setQuality(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Dimensão máxima (px) <span className={styles.optional}>(opcional — ex.: 2000 para Tray)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="8000"
+                    value={maxDimension}
+                    onChange={(event) => setMaxDimension(event.target.value)}
+                    placeholder="Padrão: 4000"
                   />
                 </label>
               </div>
